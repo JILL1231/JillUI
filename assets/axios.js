@@ -1,165 +1,110 @@
-import axios from "axios";
-import qs from "qs";
+//引入axios
+import axios from 'axios'
 
-class Axios {
-    constructor (settings) {
-        this.url = settings.url;
-        this.beforeSend = settings.beforeSend;
-        this.success = settings.success;
-        this.fail = settings.fail;
-        this.data = settings.data;
-        this.cache = new Cache();
-        this.identity = settings.identity;
-        this.datatype = settings.datatype;
-        this.contenttype = settings.contenttype;
-        this.processData = settings.processData;
-        this.iscache = settings.cache;
-        this.eachUpload = settings.eachUpload;
+let cancel ,promiseArr = {}
+const CancelToken = axios.CancelToken;
+//请求拦截器
+axios.interceptors.request.use(config => {
+    //发起请求时，取消掉当前正在进行的相同请求
+    if (promiseArr[config.url]) {
+        promiseArr[config.url]('操作取消')
+        promiseArr[config.url] = cancel
+    } else {
+        promiseArr[config.url] = cancel
+    }
+      return config
+}, error => {
+    return Promise.reject(error)
+})
 
-        const Axios = axios.create({
-            baseURL: "/", 
-            timeout: 10000,
-            responseType: "json",
-            withCredentials: true, // 是否允许带cookie这些
-            headers: {
-              "Content-Type": "application/json;charset=utf-8"
-            }
-        });
-        
-        //添加请求拦截器
-        Axios.interceptors.request.use(
-            config => {
-            // 在发送请求之前,POST传参序列化
-            if (
-                config.method === "post"
-            ) {
-                // 序列化
-                config.data = qs.stringify(config.data);
-            }
-        
-            // 若是有做鉴权token , 就给头部带上token
-            // 若是需要跨站点,存放到 cookie 会好一点,限制也没那么多,有些浏览环境限制了 localstorage 的使用
-            if (localStorage.token) {
-                config.headers.Authorization = localStorage.token;
-            }
-            return config;
-            },
-            error => {
-            // error 的回调信息
-            console.log('POST传参序列化Error',error.data.error.message)
-            return Promise.reject(error.data.error.message);
-            }
-        );
-  
-        //返回状态判断(添加响应拦截器)
-        Axios.interceptors.response.use(
-            res => {
-            //对响应数据做些事
-            if (res.data && !res.data.success) {
-                if(res.data.error.message.message){
-                console.log('状态判断Error',res.data.error.message.message)
-                }else{
-                console.log('状态判断Error',res.data.error.message)
-                }
-                
-                return Promise.reject(res.data.error.message);
-            }
-            return res;
-            },
-            error => {    
-                //接口回调satus 
-                if (error.response.status === 403) {
-                    router.push({
-                    path: "/error/403"
-                    });
-                }
-                if (error.response.status === 500) {
-                    router.push({
-                    path: "/error/500"
-                    });
-                }
-                if (error.response.status === 502) {
-                    router.push({
-                    path: "/error/502"
-                    });
-                }
-                if (error.response.status === 404) {
-                    router.push({
-                    path: "/error/404"
-                    });
-                }
-            // 返回 response 里的错误信息
-            let errorInfo =  error.data.error ? error.data.error.message : error.data;
-            return Promise.reject(errorInfo);
-            }
-        );
+//响应拦截器即异常处理
+axios.interceptors.response.use(response => {
+    return response
+}, err => {
+    if (err && err.response) {
+      switch (err.response.status) {
+        case 400:
+          err.message = '错误请求'
+          break;
+        case 401:
+          err.message = '未授权，请重新登录'
+          break;
+        case 403:
+          err.message = '拒绝访问'
+          break;
+        case 404:
+          err.message = '请求错误,未找到该资源'
+          break;
+        case 405:
+          err.message = '请求方法未允许'
+          break;
+        case 408:
+          err.message = '请求超时'
+          break;
+        case 500:
+          err.message = '服务器端出错'
+          break;
+        case 501:
+          err.message = '网络未实现'
+          break;
+        case 502:
+          err.message = '网络错误'
+          break;
+        case 503:
+          err.message = '服务不可用'
+          break;
+        case 504:
+          err.message = '网络超时'
+          break;
+        case 505:
+          err.message = 'http版本不支持该请求'
+          break;
+        default:
+          err.message = `连接错误${err.response.status}`
+      }
+    } else {
+      err.message = "连接到服务器失败"
     }
-    get () {
-        var xhr, successFunc, failFunc;
-        if (this.beforeSend) {
-            this.beforeSend();
-        }
-        successFunc = this.success;
-        failFunc = this.fail;
-        this.xhr = xhr = $.get({
-            url: this.url
-        });
-        xhr.then(function (data) {
-            try {
-                data = JSON.parse(data);
-            } catch (e) {
-                data = [];
-            }
-            data  = Array.isArray(data) ? data : [data];
-            successFunc && successFunc(data, xhr);
-            return data;
-        }).fail(function (e) {
-            failFunc && failFunc(e)
-        });
-        // this.log && log(this.identity);
-        return this.save(xhr);
-    }
-    post () {
-        var xhr, successFunc, failFunc, eachUpload;
-        this.beforeSend && this.beforeSend();
-        successFunc = this.success;
-        failFunc = this.fail;
-        eachUpload = this.eachUpload;
-        this.xhr = xhr = $.post({
-            url: this.url,
-            withCredentials: true,
-            data: this.datatype ? JSON.stringify(this.data) : this.data,
-            dataType: this.datatype ? 'json' : '',
-            contentType: this.contenttype === 'no' ? false : this.contenttype || 'application/x-www-form-urlencoded',
-            processData: this.processData !== 'no',
-            cache: this.iscache !== 'no',
-            xhr: function () {
-                var xhr = $.ajaxSettings.xhr();
-                eachUpload && eachUpload(xhr);
-                return xhr;
-            }
-        });
-        xhr.then(function (data) {
-            try {
-                data = JSON.parse(data);
-            } catch (e) {
-                data = [];
-            }
-            data  = Array.isArray(data) ? data : [data];
-            successFunc && successFunc(data, xhr);
-            return data;
-        }).fail(function (e) {
-            failFunc && failFunc(e)
-        });
-        return this.save(xhr);
-    }
-    abort (xhr) {
-        this.xhr.abort();
-    }
-    save (xhr) {
-        return this.cache.add(xhr);
-    }
-    getXhr (index) {
-        return this.cache.get(index);
-    }
+    message.err(err.message)
+      return Promise.resolve(err.response)
+})
+
+axios.defaults.baseURL = '/api'
+//设置默认请求头
+axios.defaults.headers = {
+    'X-Requested-With': 'XMLHttpRequest'
 }
+axios.defaults.timeout = 10000
+
+export default {
+  //get请求
+    get (url,param) {
+      return new Promise((resolve,reject) => {
+        axios({
+          method: 'get',
+          url,
+          params: param,
+          cancelToken: new CancelToken(c => {
+            cancel = c
+          })
+        }).then(res => {
+          resolve(res)
+        })
+      })
+    },
+  //post请求
+    post (url,param) {
+      return new Promise((resolve,reject) => {
+        axios({
+          method: 'post',
+          url,
+          data: param,
+          cancelToken: new CancelToken(c => {
+            cancel = c
+          })
+        }).then(res => {
+          resolve(res)
+        })
+      })
+     }
+  }
